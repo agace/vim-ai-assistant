@@ -4,6 +4,7 @@ function! AIHelper()
     let codefile = '/tmp/ai_code.txt'
     let expfile = '/tmp/ai_explanation.txt'
 
+    " Ask user for instruction
     let user_prompt = input('Instruction (e.g. fix, refactor, simplify): ')
     if user_prompt == ""
       echo "Cancelled."
@@ -11,7 +12,7 @@ function! AIHelper()
     endif
 
     let l:start = line("'<")
-    let l:end = line("'>")
+    let l:end   = line("'>")
     let filetype = &filetype
 
     " Write prompt and selection to tmp
@@ -19,49 +20,62 @@ function! AIHelper()
     execute l:start . "," . l:end . "write >>" . tmpfile
 
     echo "AI is generating your response..."
-
     let $VIM_FILETYPE = filetype
     silent execute "!python3 ~/vim-ai-assistant/assistant.py < " . tmpfile
 
-    " Create scratch buffer with AI code
+    " Save original buffer number
     let orig_buf = bufnr('%')
-    let temp_buf = bufnr('__AICode__')
-    if temp_buf != -1 | execute 'bd! ' . temp_buf | endif
 
-    execute 'edit __AICode__'
+    " Create scratch buffer with AI code
+    let temp_buf = bufnr('__AICode__')
+    if temp_buf != -1
+      execute 'bd! ' . temp_buf
+    endif
+
+    " Open AI code in a new vertical split
+    execute 'vnew __AICode__'
     setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile
     silent execute '0read ' . codefile
     normal! gg
-    execute 'file __AICode__'
 
-    " Show diff with original
-    execute 'vert diffsplit #'
-    echo "Press 'y' to accept changes, 'n' to cancel"
-
+    wincmd p
+    redraw
+    echo "Preview ready. Press 'y' to accept changes, 'n' to cancel."
     let choice = nr2char(getchar())
 
-		if choice ==# 'y'
-		execute 'b ' . orig_buf
-		" Delete selected lines
-		execute l:start . "," . l:end . "delete _"
-		" Insert AI code **at the original start line**
-		call cursor(l:start, 1)
-		execute "read " . codefile
-		execute 'bd! __AICode__'
+    if choice ==# 'y'
+      " Apply changes
+      execute 'b ' . orig_buf
+      execute l:start . "," . l:end . "delete _"
+      call cursor(l:start, 1)
+      execute "read " . codefile
+      echo "Changes applied."
+
+      " Clean preview
+      if bufexists('__AICode__')
+        execute 'bwipeout! __AICode__'
+      endif
+      if winnr('$') > 1
+        execute 'only'
+      endif
+
+      " Show explanation *only after accept*
+      execute 'vert new'
+      setlocal buftype=nofile bufhidden=wipe noswapfile
+      silent execute "0read " . expfile
+      normal! gg
+
     else
-      " Clean up diff view and keep original untouched
+      " Cancel, keep original
+      if bufexists('__AICode__')
+        execute 'bwipeout! __AICode__'
+      endif
       if winnr('$') > 1
         execute 'only'
       endif
       echo "Change cancelled."
       return
     endif
-
-    " Show explanation in new split
-    execute 'vert new'
-    setlocal buftype=nofile bufhidden=wipe noswapfile
-    silent execute "0read " . expfile
-    normal! gg
 
   catch /.*/
     echohl ErrorMsg
